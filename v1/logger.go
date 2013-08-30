@@ -1,3 +1,19 @@
+/**
+ * (C) Copyright 2013 MongoDB, Inc.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at:
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
 package slogger
 
 import (
@@ -91,25 +107,42 @@ func (self *Logger) logf(level Level, messageFmt string, args ...interface{}) (*
 type Level uint8
 
 // The level is in an order such that the expressions
-// `level < WARN`, `level >= INFO` have intuitive meaning.
+// `level < Warn`, `level >= Info` have intuitive meaning. Note: The all caps
+// log level constants are now deprecated and will likely be removed from future
+// versions in favor of the Go preferred CamelCase constants. Note: The two types
+// should not be mixed. If you use Debug in your Logger initialization, you should use
+// Debug in your Logf etc. calls.
 const (
 	OFF Level = iota
+	Off Level = iota
+	Debug
 	DEBUG
+	Info
 	INFO
+	Warn
 	WARN
+	Error
 	ERROR
 )
 
 func (self Level) Type() string {
 	switch self {
-	case ERROR:
-		return "error"
-	case WARN:
-		return "warn"
-	case INFO:
-		return "info"
-	case DEBUG:
-		return "debug"
+		case ERROR:
+			return "error"
+		case Error:
+			return "error"
+		case WARN:
+			return "warn"
+		case Warn:
+			return "warn"
+		case INFO:
+			return "info"
+		case Info:
+			return "info"
+		case DEBUG:
+			return "debug"
+		case Debug:
+			return "debug"
 	}
 
 	return "off?"
@@ -162,3 +195,4 @@ func stripDirectories(filepath string, toKeep int) string {
 
 	return filepath[idxCutoff+1:]
 }
+
