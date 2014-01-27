@@ -94,7 +94,6 @@ type Level uint8
 // `level < WARN`, `level >= INFO` have intuitive meaning.
 const (
 	OFF Level = iota
-	TRACE
 	DEBUG
 	INFO
 	WARN
@@ -111,8 +110,6 @@ func (self Level) Type() string {
 		return "info"
 	case DEBUG:
 		return "debug"
-	case TRACE:
-		return "trace"
 	}
 
 	return "off?"
