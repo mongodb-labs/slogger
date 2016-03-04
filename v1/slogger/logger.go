@@ -1,3 +1,17 @@
+// Copyright 2013, 2014 MongoDB, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package slogger
 
 import (
@@ -23,13 +37,15 @@ func (self *Log) Message() string {
 }
 
 type Logger struct {
-	Prefix    string
-	Appenders []Appender
+	Prefix       string
+	Appenders    []Appender
+	TurboFilters []TurboFilter
 }
 
 // Log a message and a level to a logger instance. This returns a
 // pointer to a Log and a slice of errors that were gathered from every
-// Appender (nil errors included).
+// Appender (nil errors included), or nil and an empty error slice if
+// any turbo filter condition was not satisfied causing an early exit.
 func (self *Logger) Logf(level Level, messageFmt string, args ...interface{}) (*Log, []error) {
 	return self.logf(level, messageFmt, args...)
 }
@@ -58,6 +74,12 @@ func (self *Logger) Stackf(level Level, stackErr error, messageFmt string, args 
 
 func (self *Logger) logf(level Level, messageFmt string, args ...interface{}) (*Log, []error) {
 	var errors []error
+
+	for _, filter := range self.TurboFilters {
+		if filter(level, messageFmt, args) == false {
+			return nil, errors
+		}
+	}
 
 	_, file, line, ok := runtime.Caller(2)
 	if ok == false {

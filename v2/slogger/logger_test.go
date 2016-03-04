@@ -1,3 +1,17 @@
+// Copyright 2013 - 2016 MongoDB, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 package slogger
 
 import (
@@ -6,6 +20,7 @@ import (
 	"io/ioutil"
 	"os"
 	"regexp"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -22,11 +37,12 @@ func TestFormat(test *testing.T) {
 		Prefix:     "agent.OplogTail",
 		Level:      INFO,
 		Filename:   "oplog.go",
+		FuncName:   "TailOplog",
 		Line:       88,
-		messageFmt: "Tail started on RsId: `backup_test`",
+		MessageFmt: "Tail started on RsId: `backup_test`",
 	}
 
-	expected := "[0001/01/01 00:00:00] [agent.OplogTail.info] [oplog.go:88] Tail started on RsId: `backup_test`\n"
+	expected := "[0001/01/01 00:00:00.000] [agent.OplogTail.info] [oplog.go:TailOplog:88] Tail started on RsId: `backup_test`\n"
 	received := FormatLog(&log)
 	if received != expected {
 		test.Errorf("Improperly formatted log. Received: `%v`", received)
@@ -61,49 +77,9 @@ func TestLog(test *testing.T) {
 	if strings.Contains(fileOutput, logMessage) == false {
 		test.Fatal("Incorrect message. Expected: `%v` Full log: `%v`", logMessage, fileOutput)
 	}
-}
 
-func TestCopy(test *testing.T) {
-	CapLogCache(10)
-
-	logger := &Logger{
-		Prefix:    "agent.OplogTail",
-		Appenders: []Appender{},
-	}
-
-	logger.Logf(INFO, "0")
-	logger.Logf(INFO, "1")
-	logger.Logf(DEBUG, "2")
-	logger.Logf(DEBUG, "3")
-	logger.Logf(WARN, "4")
-	logger.Logf(DEBUG, "5")
-	logger.Logf(INFO, "6")
-
-	for idx, log := range Cache.Copy() {
-		expected := fmt.Sprintf("%d", idx)
-		if expected != log.Message() {
-			test.Errorf("Mismatch message. Idx: %d expected: `%v`", idx, expected)
-		}
-
-		//fmt.Printf("#%d: %v", idx, FormatLog(log))
-	}
-
-	CapLogCache(5)
-	logger.Logf(INFO, "0")
-	logger.Logf(INFO, "1")
-	logger.Logf(DEBUG, "2")
-	logger.Logf(DEBUG, "3")
-	logger.Logf(WARN, "4")
-	logger.Logf(DEBUG, "5")
-	logger.Logf(INFO, "6")
-
-	for idx, log := range Cache.Copy() {
-		expected := fmt.Sprintf("%d", idx+2)
-		if expected != log.Message() {
-			test.Errorf("Mismatch message. Idx: %d expected: `%v`", idx, expected)
-		}
-
-		//fmt.Printf("#%d: %v", idx, FormatLog(log))
+	if !strings.Contains(fileOutput, "TestLog") {
+		test.Fatal("Incorrect function name. Expected `TestLog` Full log: `%v`", fileOutput)
 	}
 }
 
@@ -116,9 +92,11 @@ func (self *countingAppender) Append(log *Log) error {
 	return nil
 }
 
-func TestFilter(test *testing.T) {
-	CapLogCache(10)
+func (self *countingAppender) Flush() error {
+	return nil
+}
 
+func TestFilter(test *testing.T) {
 	counter := &countingAppender{}
 	logger := &Logger{
 		Prefix:    "agent.OplogTail",
@@ -134,11 +112,6 @@ func TestFilter(test *testing.T) {
 		test.Errorf("Expected two logs to pass through the filter to the appender. Received: %d",
 			counter.count)
 	}
-
-	cache := Cache.Copy()
-	if len(cache) != 4 {
-		test.Errorf("Expected all logs to be cached. Received: %d", len(cache))
-	}
 }
 
 func TestStacktrace(test *testing.T) {
@@ -147,7 +120,7 @@ func TestStacktrace(test *testing.T) {
 	// runtime/proc.c:1214
 
 	stacktrace := NewStackError("").Stacktrace
-	if match, _ := regexp.MatchString("^at slogger/v1/logger_test.go:\\d+", stacktrace[0]); match == false {
+	if match, _ := regexp.MatchString("^at v2/slogger/logger_test.go:\\d+", stacktrace[0]); match == false {
 		test.Errorf("Stacktrace level 0 did not match. Received: %v", stacktrace[0])
 	}
 
@@ -191,11 +164,11 @@ func TestStackError(test *testing.T) {
 		test.Errorf("Expected output to start with the message. Received:\n%v", str)
 	}
 
-	if match, _ := regexp.MatchString("slogger/v1/logger_test.go:\\d+", str); match == false {
-		test.Errorf("Expected to see output for `v1/logger_test.go`. Received:\n%v", str)
+	if match, _ := regexp.MatchString("v2/slogger/logger_test.go:\\d+", str); match == false {
+		test.Errorf("Expected to see output for `v2/logger_test.go`. Received:\n%v", str)
 	}
 
-	match, err := regexp.MatchString("slogger/v1/logger.go:\\d+", str)
+	match, err := regexp.MatchString("slogger/v2/logger.go:\\d+", str)
 	if err != nil {
 		test.Errorf("Error matching: %v", err)
 	}
@@ -258,4 +231,86 @@ func TestStacktracing(test *testing.T) {
 	if len(logOutput) == 0 {
 		test.Errorf("Expected a log message when adding -4.")
 	}
+}
+
+func TestContext(t *testing.T) {
+	ctxt := NewContext()
+	ctxt.Add("foo", "bar")
+	ctxt.Add("biz", "baz")
+
+	if ctxt.Len() != 2 {
+		t.Fatalf("Expected len of ctxt (%v) to be 2, but was %d", ctxt, ctxt.Len())
+	}
+
+	assertUnorderedStringSlicesEqual(t, ctxt.Keys(), []string{"foo", "biz"})
+
+	ctxt.Remove("biz")
+	if ctxt.Len() != 1 {
+		t.Fatalf("Expected len of ctxt (%v) to be 1, but was %d", ctxt, ctxt.Len())
+	}
+	assertUnorderedStringSlicesEqual(t, ctxt.Keys(), []string{"foo"})
+	val, found := ctxt.Get("foo")
+
+	if !found {
+		t.Fatalf("Expected \"foo\" to be present in ctxt. ctxt: %v", ctxt)
+	}
+
+	if val != "bar" {
+		t.Fatalf("Expected ctxt.Get(\"foo\") == \"bar\" but was == \"%v\"", val)
+	}
+
+	_, found = ctxt.Get("biz")
+	if found {
+		t.Fatalf("Expected \"biz\" to not be in ctxt.  ctxt: %v", ctxt)
+	}
+}
+
+func assertLoggingOccurred(t *testing.T, logBuffer *bytes.Buffer, logit func()) {
+	origOutput, _ := ioutil.ReadAll(logBuffer)
+	origBufSize := len(origOutput)
+	logit()
+	newOutput, _ := ioutil.ReadAll(logBuffer)
+	newBufSize := len(newOutput)
+
+	if newBufSize <= origBufSize {
+		t.Errorf("Logging should have occurred")
+	}
+}
+
+// this modifies the arguments!
+func assertUnorderedStringSlicesEqual(t *testing.T, slice1 []string, slice2 []string) {
+	if len(slice1) != len(slice2) {
+		t.Errorf("Expected slices to be equal! slice1: %v ; slice2: %v", slice1, slice2)
+		return
+	}
+
+	sort.StringSlice(slice1).Sort()
+	sort.StringSlice(slice2).Sort()
+
+	for i, str := range slice1 {
+		if str != slice2[i] {
+			t.Errorf("Expected slices to be equal! slice1: %v ; slice2: %v", slice1, slice2)
+			return
+		}
+	}
+}
+
+func denyLoggingOccurred(t *testing.T, logBuffer *bytes.Buffer, logit func()) {
+	origOutput, _ := ioutil.ReadAll(logBuffer)
+	origBufSize := len(origOutput)
+	logit()
+	newOutput, _ := ioutil.ReadAll(logBuffer)
+	newBufSize := len(newOutput)
+
+	if newBufSize != origBufSize {
+		t.Errorf("Logging should not have occurred")
+	}
+}
+
+func logHelloMongoDB(logger *Logger) {
+	logger.logf(WARN, NoErrorCode, "Hello MongoDB", nil)
+}
+
+func logHelloWorld(logger *Logger) {
+	logger.logf(WARN, NoErrorCode, "Hello World", nil)
 }
